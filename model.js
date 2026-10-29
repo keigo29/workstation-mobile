@@ -68,6 +68,20 @@
   }
   const newKey = () => 'm:' + rid();
 
+  // ---------- 追加用のファイルを取り込む ----------
+  // 「変更の一覧」の形のファイル（学習計画などをまとめて入れるもの）を、スマホでした変更として足す。
+  // 同じ変更（同じID）は二重に入れない。Mac に入ったことが分かっている変更も入れない
+  const OP_TYPES = ['habit.set', 'habit.add', 'habit.edit', 'habit.delete', 'dayoff.set', 'project.add', 'project.edit',
+    'task.add', 'task.edit', 'task.done', 'task.delete', 'sub.add', 'sub.done'];
+  function importOps(state, o) {
+    if (!o || o.format !== FORMAT || o.kind !== 'changes' || !Array.isArray(o.ops)) throw new Error('取り込めない形のファイルです');
+    if (Number(o.version) > VERSION) throw new Error('新しい形式のファイルです。このページを読み込み直してください');
+    const have = new Set([...state.ops.map(x => x.id), ...((state.base && state.base.applied) || [])]);
+    const add = o.ops.filter(op => op && typeof op.id === 'string' && OP_TYPES.includes(op.type) && !have.has(op.id))
+      .map(op => ({ ...op, at: Number(op.at) || Date.now() }));
+    return { state: { ...state, ops: [...state.ops, ...add] }, added: add.length };
+  }
+
   // ---------- スマホ → Mac ----------
   function buildChanges(state, device) {
     return { format: FORMAT, kind: 'changes', version: VERSION, exportedAt: Date.now(), device: device || '', basedOn: state.base ? state.base.exportedAt : null, ops: state.ops };
@@ -215,6 +229,6 @@
   }
 
   const M = { FORMAT, VERSION, keyOf, parseKey, addDays, diffDays, isDay, normalizeDates, checkSnapshot, receive, addOp, newKey,
-    buildChanges, derive, isDue, streak, dayScore, progress, target, behind, onDay, repeatLabel };
+    buildChanges, importOps, derive, isDue, streak, dayScore, progress, target, behind, onDay, repeatLabel };
   if (typeof module !== 'undefined' && module.exports) module.exports = M; else root.Model = M;
 })(typeof self !== 'undefined' ? self : globalThis);

@@ -1,6 +1,6 @@
 // オフラインでも開けるように、アプリのファイルを取っておく（データは送らない）
 // ファイルを変えたら VERSION を上げる（古いものが残らないように）
-const VERSION = 'ws-mobile-v3';
+const VERSION = 'ws-mobile-v4';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'model.js', 'icons.js', 'manifest.webmanifest',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 

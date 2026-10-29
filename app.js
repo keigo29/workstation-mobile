@@ -243,7 +243,11 @@
   const G_BEFORE = 14, G_AFTER = 75;
   function renderGantt(main) {
     const today = todayKey();
-    const from = M.addDays(today, -G_BEFORE), days = G_BEFORE + G_AFTER + 1;
+    // 右端：いちばん遅い期限の1週間後まで（少なくとも今日から G_AFTER 日。長くても1年半）
+    const tasks = view.tasks.filter(t => t.due && (prefs.showDone || !t.completed));
+    const lastDue = tasks.reduce((m, t) => (t.due > m ? t.due : m), today);
+    const from = M.addDays(today, -G_BEFORE);
+    const days = Math.min(550, Math.max(G_BEFORE + G_AFTER + 1, M.diffDays(from, lastDue) + 8));
     const DW = 30;
 
     const bar = el('div', 'gbar');
@@ -291,7 +295,6 @@
     tl.style.left = `calc(var(--nw) + ${G_BEFORE * DW + DW / 2 - 1}px)`;
     body.append(tl);
 
-    const tasks = view.tasks.filter(t => t.due && (prefs.showDone || !t.completed));
     const groups = [...view.projects.map(p => ({ p, list: tasks.filter(t => t.project_id === p.id) })),
       { p: { id: 0, name: 'プロジェクトなし', color: '#717680' }, list: tasks.filter(t => !projOf(t.project_id)) }].filter(g => g.list.length);
     if (!groups.length) {
@@ -470,7 +473,7 @@
 
     const c = el('div', 'card');
     const bs = el('div', 'syncBtns');
-    bs.append(btn('btn primary wide', ['download', 'Macから受け取る'], pickFile),
+    bs.append(btn('btn primary wide', ['download', 'ファイルを取り込む'], pickFile),
       btn('btn wide', ['upload', state.ops.length ? `Macへ送る（${state.ops.length}件）` : 'Macへ送る'], sendToMac));
     c.append(bs);
     if (state.sentAt) { const s = el('div', 'sub', `最後に送った日：${fmtTime(state.sentAt)}`); s.style.marginTop = '10px'; c.append(s); }
@@ -480,12 +483,12 @@
     how.append(el('h2', '', '同期のしかた'));
     const ol = el('ol', 'steps');
     for (const t of [
-      'Mac の Workstation で「設定 → スマホ用に書き出す」。できたファイルを AirDrop などでスマホへ送り、ここの「Macから受け取る」で選びます。',
+      'Mac の Workstation で「設定 → スマホ用に書き出す」。できたファイルを AirDrop などでスマホへ送り、ここの「ファイルを取り込む」で選びます。',
       'スマホで習慣のチェックやタスクを変えたら「Macへ送る」。ファイルを Mac へ送り、Mac の「設定 → スマホの変更を取り込む」で選びます。',
-      'Mac で取り込んだら、もう一度「スマホ用に書き出す」→「Macから受け取る」をすると、送った変更がここから消えます（何度送っても二重にはなりません）。',
+      'Mac で取り込んだら、もう一度「スマホ用に書き出す」→「ファイルを取り込む」をすると、送った変更がここから消えます（何度送っても二重にはなりません）。',
     ]) ol.append(el('li', '', t));
     how.append(ol);
-    const nt = el('div', 'sub', 'スマホだけでも使えます。スマホで作った習慣やプロジェクトも「Macへ送る」で Mac に入ります（同じ名前のものは1つにまとまります）。');
+    const nt = el('div', 'sub', 'スマホだけでも使えます。スマホで作った習慣やプロジェクトも「Macへ送る」で Mac に入ります（同じ名前のものは1つにまとまります）。学習計画などをまとめて入れる「追加用のファイル」も「ファイルを取り込む」で入ります。');
     nt.style.marginTop = '10px';
     how.append(nt);
     main.append(how);
@@ -519,7 +522,19 @@
     if (!f) return;
     try {
       if (f.size > 30 * 1024 * 1024) throw new Error('ファイルが大きすぎます');
-      const snap = M.checkSnapshot(JSON.parse(await f.text()));
+      const data = JSON.parse(await f.text());
+      // 追加用のファイル（学習計画など）：スマホでした変更として足す
+      if (data && data.kind === 'changes') {
+        const r = M.importOps(state, data);
+        if (!r.added) { toast('このファイルの中身は、もう入っています'); return; }
+        state = r.state;
+        recompute();
+        await saveState();
+        render();
+        toast(`${r.added}件を取り込みました`);
+        return;
+      }
+      const snap = M.checkSnapshot(data);
       if (state.base && snap.exportedAt < state.base.exportedAt && !confirm('今あるデータより前に書き出したファイルです。読み込みますか？')) return;
       const before = state.ops.length;
       state = M.receive(state, snap);
@@ -654,7 +669,7 @@
     add.append(ai, btn('iconBtn dark', 'plus', addSub, '足す'));
     subs.append(list, add);
     inn.append(subs);
-    if (t?.note) { inn.append(el('div', 'sub', 'メモ（Mac で書いたもの）')); inn.append(el('div', 'note', t.note)); }
+    if (t?.note) { inn.append(el('div', 'sub', 'メモ')); inn.append(el('div', 'note', t.note)); }
 
     const bt = el('div', 'shBtns');
     if (!isNew) bt.append(btn('btn danger', ['trash-2', '消す'], () => {
