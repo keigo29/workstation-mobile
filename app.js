@@ -495,14 +495,13 @@
         const c = btn('cal-day' + (d.getMonth() !== calMonth.getMonth() ? ' out' : '') + ([0, 6].includes(d.getDay()) ? ' we' : '') + (k === today ? ' today' : '') + (k === calSel ? ' sel' : '') + (off ? ' off' : ''),
           [], () => { calSel = k; if (d.getMonth() !== calMonth.getMonth()) calMonth = new Date(d.getFullYear(), d.getMonth(), 1); render(); }, md(k));
         c.style.gridColumn = String(i + 1);
-        const tp = el('div', 'cal-dtop');
-        tp.append(el('span', 'cal-dnum', String(d.getDate())));
+        // 日付だけを上に（Google カレンダー・TimeTree と同じ）。確認項目を全部できた日は右上に小さな点
+        c.append(el('span', 'cal-dnum', String(d.getDate())));
         if (k <= today) {
           const s = M.dayScore(view.habits, k, view.daysOff);
-          if (s.due && s.done) tp.append(el('i', 'cal-hb' + (s.done >= s.due ? ' full' : '')));
+          if (s.due && s.done >= s.due) c.append(el('i', 'cal-hb'));
         }
-        c.append(tp);
-        if (off) c.append(el('span', 'cal-off', off));
+        if (off) c.title = off;
         row.append(c);
       }
       // この週にかかるタスクを、空いている段に並べる
@@ -520,19 +519,24 @@
         bar.style.gridColumn = `${a + 1} / ${b + 2}`;
         bar.style.gridRow = String(lane + 2);
         if (t.milestone) bar.insertAdjacentHTML('beforeend', icon('flag'));
+        // 週の途中から続くバーにも名前を出す（どのタスクか分かるように）
         bar.append(el('span', '', t.title));
         row.append(bar);
       }
+      // 段の数は、その週に使った分だけ（タスクのない週は低く）
+      const anyMore = hidden.some(Boolean);
+      row.style.gridTemplateRows = `28px repeat(${Math.max(1, lanes.length)}, 17px)${anyMore ? ' 14px' : ''}`;
+      const moreRow = Math.max(1, lanes.length) + 2;
       hidden.forEach((n, i) => {
         if (!n) return;
         const m = btn('cal-more', `+${n}`, () => { calSel = M.addDays(ws, i); render(); }, `ほか${n}件`);
-        m.style.gridColumn = String(i + 1); m.style.gridRow = String(LANES + 2);
+        m.style.gridColumn = String(i + 1); m.style.gridRow = String(moreRow);
         row.append(m);
       });
       cal.append(row);
     }
     const lg = el('div', 'legend');
-    lg.innerHTML = '<span><i class="cal-hb full"></i>確認項目を全部できた</span><span><i class="cal-hb"></i>一部できた</span><span><i class="sq off"></i>休みの日</span>';
+    lg.innerHTML = '<span><i class="cal-hb"></i>確認項目を全部できた</span><span><i class="sq off"></i>休みの日</span><span><i class="sq late"></i>期限切れ</span>';
     cal.append(lg);
     main.append(cal);
 

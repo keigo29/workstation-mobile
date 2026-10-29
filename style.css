@@ -326,37 +326,39 @@ main { padding: 2px 14px calc(var(--tabs-h) + env(safe-area-inset-bottom) + 24px
 .mnav { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .mnav b { font-size: 18px; font-weight: 700; letter-spacing: -.02em; padding: 0 4px; }
 .mnav .btn { margin-left: auto; }
-.cal-month { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); padding: 6px 4px 8px; margin: 0 -4px 12px; }
+.cal-month { background: var(--card); border-radius: var(--r); box-shadow: var(--shadow); padding: 6px 2px 8px; margin: 0 -4px 12px; }
 .cal-wd { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding: 4px 0 6px; }
 .cal-wd span { font-size: 11px; font-weight: 700; color: var(--sub); text-align: center; }
 .cal-wd span.we { color: var(--g400); }
-.cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 30px repeat(3, 19px) 16px; row-gap: 2px; border-top: 1px solid var(--line); position: relative; padding-bottom: 3px; }
-.cal-day { grid-row: 1 / -1; min-width: 0; border: 0; border-left: 1px solid var(--line); padding: 3px 2px; background: none; display: flex; flex-direction: column; align-items: stretch; text-align: left; position: relative; }
-.cal-day:first-child { border-left: 0; }
-.cal-day.we { background: color-mix(in srgb, var(--soft) 35%, transparent); }
-.cal-day.off { background: color-mix(in srgb, var(--ok) 8%, transparent); }
-.cal-day.sel { box-shadow: inset 0 0 0 2px var(--text); border-radius: 10px; }
-.cal-day.out .cal-dnum { color: var(--g400); opacity: .6; }
-.cal-dtop { display: flex; align-items: center; justify-content: space-between; gap: 2px; padding: 0 1px; }
-.cal-dnum { font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 22px; height: 22px; display: inline-grid; place-items: center; border-radius: 99px; padding: 0 3px; }
-.cal-day.today .cal-dnum { background: var(--gloss), var(--accent); color: var(--accent-text); box-shadow: var(--gloss-line); }
-.cal-off { position: absolute; bottom: 3px; left: 3px; right: 3px; font-size: 9px; font-weight: 700; color: var(--ok-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
-.cal-hb { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--ok); flex-shrink: 0; display: inline-block; }
-.cal-hb.full { background: var(--ok); }
-.cal-bar { position: relative; z-index: 1; min-width: 0; margin: 0 2px; height: 19px; border: 0; border-radius: 6px; padding: 0 4px 0 6px; display: flex; align-items: center; gap: 3px;
-  background: color-mix(in srgb, var(--c) 18%, var(--card)); color: var(--text); font-size: 10px; font-weight: 700; text-align: left; box-shadow: inset 3px 0 0 var(--c); }
-.cal-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cal-bar .lc { width: 11px; height: 11px; flex-shrink: 0; color: var(--c); }
-.cal-bar.cont-l { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; box-shadow: none; }
+/* 1週：日付の段 ＋ バー3段 ＋「+n」の段。縦の線はなし・週の間だけに線（Google カレンダー・TimeTree と同じ） */
+.cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-template-rows: 28px 17px; row-gap: 2px; min-height: 58px; border-top: 1px solid var(--line); position: relative; padding-bottom: 4px; }
+.cal-day { grid-row: 1 / -1; min-width: 0; border: 0; padding: 3px 0 0; margin: 0; background: none; border-radius: 12px; display: flex; justify-content: center; align-items: flex-start; position: relative; }
+.cal-day.off { background: color-mix(in srgb, var(--ok) 9%, transparent); border-radius: 0; }
+.cal-day.sel { background: color-mix(in srgb, var(--text) 6%, transparent); border-radius: 12px; }
+.cal-dnum { font-size: 12.5px; font-weight: 600; font-variant-numeric: tabular-nums; min-width: 24px; height: 24px; display: inline-grid; place-items: center; border-radius: 99px; padding: 0 3px; }
+.cal-day.we .cal-dnum { color: var(--sub); }
+.cal-day.sel .cal-dnum { font-weight: 800; }
+.cal-day.out .cal-dnum { color: var(--g400); opacity: .55; }
+.cal-day.today .cal-dnum { background: var(--gloss), var(--accent); color: var(--accent-text); box-shadow: var(--gloss-line); font-weight: 700; opacity: 1; }
+.cal-hb { position: absolute; top: 4px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+/* タスクのバー：プロジェクトの色でぬって、白い文字 */
+.cal-bar { position: relative; z-index: 1; min-width: 0; margin: 0 2px; height: 17px; border: 0; border-radius: 5px; padding: 0 4px; display: flex; align-items: center; gap: 2px;
+  background: var(--gloss), var(--c); color: #fff; font-size: 10px; font-weight: 700; line-height: 1; text-align: left; text-shadow: 0 1px 1px rgba(0,0,0,.18); }
+.cal-bar span { overflow: hidden; text-overflow: clip; white-space: nowrap; }
+.cal-bar .lc { width: 10px; height: 10px; flex-shrink: 0; }
+.cal-bar.cont-l { margin-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .cal-bar.cont-r { margin-right: 0; border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.cal-bar.done { opacity: .45; }
+.cal-bar.done { opacity: .38; }
 .cal-bar.done span { text-decoration: line-through; }
-.cal-bar.late { box-shadow: inset 3px 0 0 var(--danger); color: var(--danger); }
-.cal-bar.ms { background: transparent; box-shadow: none; padding-left: 3px; }
-.cal-more { position: relative; z-index: 1; margin: 0 4px; height: 16px; border: 0; background: none; color: var(--sub); font-size: 10px; font-weight: 700; text-align: left; padding: 0 2px; }
-.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--sub); padding: 8px 10px 2px; }
+.cal-bar.late { box-shadow: inset 0 0 0 1.5px var(--danger); }
+.cal-bar.ms { background: color-mix(in srgb, var(--c) 14%, var(--card)); color: var(--c); text-shadow: none; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent); }
+.cal-more { position: relative; z-index: 1; margin: 0; height: 14px; border: 0; background: none; color: var(--sub); font-size: 10px; font-weight: 700; text-align: center; padding: 0; line-height: 14px; }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--sub); padding: 10px 10px 2px; }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
-.legend .sq.off { width: 12px; height: 12px; border-radius: 4px; background: color-mix(in srgb, var(--ok) 18%, transparent); display: inline-block; }
+.legend .cal-hb { position: static; }
+.legend .sq { width: 12px; height: 12px; border-radius: 4px; display: inline-block; }
+.legend .sq.off { background: color-mix(in srgb, var(--ok) 18%, transparent); }
+.legend .sq.late { box-shadow: inset 0 0 0 1.5px var(--danger); }
 .dayHead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .dayHead b { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
 .dayHead .btn { margin-left: auto; background: var(--soft); box-shadow: none; }
