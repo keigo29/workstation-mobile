@@ -100,13 +100,15 @@
     else i.textContent = h.icon || h.name.slice(0, 1);
     return i;
   }
-  function needData(msg) {
-    const c = el('div', 'card empty');
-    c.innerHTML = icon('smartphone');
-    c.append(el('p', '', msg || 'まだデータがありません。Mac の Workstation で「設定 → スマホ用に書き出す」をして、このスマホで受け取ってください。'));
-    c.append(btn('btn primary', ['download', 'Macから受け取る'], pickFile));
-    return c;
-  }
+  // 習慣のアイコンと色（Mac 版と同じもの）
+  const HABIT_COLORS = ['#005cff', '#00c230', '#ff5a00', '#8600ff', '#1fb8cc', '#f2280d', '#ffae00', '#717680'];
+  const HABIT_ICONS = ['droplet', 'glass-water', 'coffee', 'apple', 'salad', 'utensils', 'pill', 'book-open', 'notebook-pen', 'pen-line', 'languages', 'graduation-cap',
+    'code', 'laptop', 'brain', 'dumbbell', 'footprints', 'bike', 'activity', 'heart-pulse', 'mountain', 'waves', 'wind', 'leaf', 'sprout', 'flower-2', 'sun', 'sunrise',
+    'moon', 'bed', 'alarm-clock', 'timer', 'shower-head', 'bath', 'sparkles', 'smile', 'heart', 'users', 'phone-off', 'smartphone', 'cigarette-off', 'wine-off',
+    'piggy-bank', 'wallet', 'music', 'guitar', 'palette', 'camera', 'gamepad-2', 'dog', 'cat', 'house', 'briefcase', 'clipboard-list', 'target', 'star', 'zap'].filter(n => window.ICONS[n]);
+  let habitEdit = false;   // 毎日確認の「編集」中（押すとチェックではなく編集を開く）
+  // 選んだ値（文字）から、プロジェクトのID（Mac の数字か、スマホで作った 'm:…'）に戻す
+  const projIdOf = v => (v ? view.projects.find(p => String(p.id) === v)?.id ?? null : null);
   // タスク1行（チェックで完了・押すと編集）
   function taskRow(t, opt = {}) {
     const r = el('div', 'trow' + (t.completed ? ' done' : ''));
@@ -158,8 +160,6 @@
     week.append(nx);
     main.append(week);
 
-    if (!state.base) { main.append(needData()); return; }
-
     // 進み具合のリング
     const sc = M.dayScore(view.habits, selDay, off);
     const card = el('div', 'card ringCard');
@@ -182,12 +182,24 @@
     const due = view.habits.filter(h => M.isDue(h, selDay, off));
     const rest = view.habits.filter(h => !M.isDue(h, selDay, off) && h.created <= selDay);
     const hc = el('div', 'card');
-    const h2 = el('h2', '', '習慣'); h2.append(el('span', 'cnt', `${sc.done} / ${sc.due}`));
+    const h2 = el('h2', '', '習慣');
+    if (!habitEdit) h2.append(el('span', 'cnt', `${sc.done} / ${sc.due}`));
+    if (view.habits.length) {
+      const eb = btn('btn small' + (habitEdit ? ' primary' : ''), habitEdit ? '完了' : '編集', () => { habitEdit = !habitEdit; render(); });
+      if (habitEdit) eb.style.marginLeft = 'auto';
+      h2.append(eb);
+    }
     hc.append(h2);
-    if (!view.habits.length) hc.append(el('div', 'empty', '習慣は Mac の「毎日確認」で作ると、ここに出ます'));
+    if (!view.habits.length) {
+      const e = el('div', 'empty');
+      e.innerHTML = icon('sprout');
+      e.append(el('p', '', '毎日続けたいことを追加しましょう（水を飲む・読書 15分 など）'));
+      hc.append(e);
+    }
     const habitBtn = (h, dim) => {
       const on = h.done.has(selDay);
-      const b = btn('habit' + (on ? ' done' : '') + (dim ? ' rest' : ''), [], () => {
+      const b = btn('habit' + (on && !habitEdit ? ' done' : '') + (dim && !habitEdit ? ' rest' : '') + (habitEdit ? ' editing' : ''), [], () => {
+        if (habitEdit) { openHabit(h); return; }
         commit({ type: 'habit.set', habit: h.id, day: selDay, on: !on });
         if (!on && navigator.vibrate) navigator.vibrate(12);
       }, h.name);
@@ -199,16 +211,21 @@
       else if (st) { sm.append(iconSpan('flame'), `${st}日連続`); }
       else sm.append(h.days.length === 7 ? '毎日' : h.days.map(x => WD[x]).join('・'));
       nm.append(sm);
-      const ck = el('span', 'check'); ck.innerHTML = icon('check');
+      const ck = el('span', habitEdit ? 'chev' : 'check'); ck.innerHTML = icon(habitEdit ? 'chevron-right' : 'check');
       b.append(habitIcon(h), nm, ck);
       return b;
     };
-    due.forEach(h => hc.append(habitBtn(h, false)));
-    if (rest.length) {
+    if (habitEdit) {
+      // 編集中は全部の習慣を並べる（まだ始まっていない習慣も）
+      view.habits.forEach(h => hc.append(habitBtn(h, false)));
+    } else due.forEach(h => hc.append(habitBtn(h, false)));
+    if (rest.length && !habitEdit) {
       const sub = el('div', 'sub', 'お休みの習慣'); sub.style.margin = '12px 0 2px';
       hc.append(sub);
       rest.forEach(h => hc.append(habitBtn(h, true)));
     }
+    const addH = btn('btn wide addHabit', ['plus', '習慣を追加'], () => openHabit(null));
+    hc.append(addH);
     main.append(hc);
 
     // その日のタスク
@@ -225,7 +242,6 @@
   // ================= ガントチャート =================
   const G_BEFORE = 14, G_AFTER = 75;
   function renderGantt(main) {
-    if (!state.base) { main.append(needData()); return; }
     const today = todayKey();
     const from = M.addDays(today, -G_BEFORE), days = G_BEFORE + G_AFTER + 1;
     const DW = 30;
@@ -234,7 +250,9 @@
     const seg = el('div', 'seg');
     seg.append(btn(prefs.showDone ? '' : 'on', '進行中', () => { prefs.showDone = false; savePrefs(); render(); }),
       btn(prefs.showDone ? 'on' : '', 'すべて', () => { prefs.showDone = true; savePrefs(); render(); }));
-    bar.append(seg, el('span', 'sub', '横にスクロールできます'));
+    const pb = btn('btn small white', ['folder-kanban', 'プロジェクト'], openProjects);
+    pb.style.marginLeft = 'auto';
+    bar.append(seg, pb);
     main.append(bar);
 
     const wrap = el('div', 'gwrap');
@@ -364,7 +382,6 @@
 
   // ================= カレンダー =================
   function renderCal(main) {
-    if (!state.base) { main.append(needData()); return; }
     const today = todayKey();
     const nav = el('div', 'mnav');
     nav.append(el('b', '', `${calMonth.getFullYear()}年${calMonth.getMonth() + 1}月`),
@@ -468,6 +485,9 @@
       'Mac で取り込んだら、もう一度「スマホ用に書き出す」→「Macから受け取る」をすると、送った変更がここから消えます（何度送っても二重にはなりません）。',
     ]) ol.append(el('li', '', t));
     how.append(ol);
+    const nt = el('div', 'sub', 'スマホだけでも使えます。スマホで作った習慣やプロジェクトも「Macへ送る」で Mac に入ります（同じ名前のものは1つにまとまります）。');
+    nt.style.marginTop = '10px';
+    how.append(nt);
     main.append(how);
 
     const set = el('div', 'card');
@@ -553,14 +573,37 @@
     hd.append(btn('iconBtn plain', 'x', () => sheet.close(), '閉じる'));
     inn.append(hd);
 
-    const field = (label, input) => { const l = el('label', 'fld'); l.append(el('span', '', label), input); return l; };
     const title = el('input', 'inp'); title.value = t?.title || ''; title.placeholder = 'タスクの名前'; title.maxLength = 200;
     inn.append(field('名前', title));
     const proj = el('select', 'inp');
     const o0 = el('option', '', 'プロジェクトなし'); o0.value = ''; proj.append(o0);
-    view.projects.forEach(p => { const o = el('option', '', p.name); o.value = p.id; proj.append(o); });
+    view.projects.forEach(p => { const o = el('option', '', p.name); o.value = String(p.id); proj.append(o); });
+    const oNew = el('option', '', '＋ 新しいプロジェクトを作る…'); oNew.value = '__new'; proj.append(oNew);
     proj.value = t ? (projOf(t.project_id) ? String(t.project_id) : '') : (prefs.lastProject && projOf(prefs.lastProject) ? String(prefs.lastProject) : '');
-    inn.append(field('プロジェクト', proj));
+    let lastPick = proj.value;
+    // 「新しいプロジェクトを作る」を選んだら、その下に名前の欄を出す
+    const np = el('div', 'newProj'); np.hidden = true;
+    const npIn = el('input', 'inp'); npIn.placeholder = '新しいプロジェクトの名前'; npIn.maxLength = 80;
+    const makeProj = () => {
+      const name = npIn.value.trim();
+      if (!name) { npIn.focus(); return; }
+      const key = M.newKey();
+      state = M.addOp(state, { type: 'project.add', key, name, color: HABIT_COLORS[view.projects.length % HABIT_COLORS.length] });
+      recompute(); saveState();
+      const o = el('option', '', name); o.value = key; proj.insertBefore(o, oNew);
+      proj.value = lastPick = key;
+      np.hidden = true; npIn.value = '';
+    };
+    npIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); makeProj(); } });
+    np.append(npIn, btn('btn small primary', '作る', makeProj));
+    proj.addEventListener('change', () => {
+      if (proj.value !== '__new') { lastPick = proj.value; np.hidden = true; return; }
+      proj.value = lastPick;
+      np.hidden = false; npIn.focus();
+    });
+    const pf = field('プロジェクト', proj);
+    pf.append(np);
+    inn.append(pf);
     const two = el('div', 'two');
     const st = el('input', 'inp'); st.type = 'date'; st.value = t?.start || (isNew ? todayKey() : '');
     const du = el('input', 'inp'); du.type = 'date'; du.value = t?.due || (isNew ? todayKey() : '');
@@ -621,7 +664,7 @@
     bt.append(btn('btn primary', isNew ? '追加' : '保存', () => {
       const name = title.value.trim();
       if (!name) { title.focus(); toast('名前を入れてください', 'warn'); return; }
-      const pid = proj.value ? Number(proj.value) : null;
+      const pid = projIdOf(proj.value);
       const dates = M.normalizeDates(st.value || null, du.value || null, ms.checked);
       let ref = t?.id;
       if (isNew) {
@@ -650,6 +693,165 @@
     if (isNew) setTimeout(() => title.focus(), 250);
   }
 
+  // ================= 習慣のシート =================
+  // 色を選ぶ部品（丸いボタンを並べる）
+  function colorPicker(cur, onPick) {
+    const box = el('div', 'swatches');
+    HABIT_COLORS.forEach(c => {
+      const b = btn('sw' + (c === cur ? ' on' : ''), [], () => { box.querySelectorAll('.sw').forEach(x => x.classList.remove('on')); b.classList.add('on'); onPick(c); }, c);
+      b.style.background = c;
+      box.append(b);
+    });
+    return box;
+  }
+  function sheetHead(inn, title) {
+    inn.innerHTML = '';
+    inn.append(el('div', 'grab'));
+    const hd = el('div', 'shHead');
+    hd.append(el('h3', '', title), btn('iconBtn plain', 'x', () => sheet.close(), '閉じる'));
+    inn.append(hd);
+    return hd;
+  }
+  const field = (label, input) => { const l = el('label', 'fld'); l.append(el('span', '', label), input); return l; };
+
+  function openHabit(h) {
+    const isNew = !h;
+    const inn = $('#sheetIn');
+    sheetHead(inn, isNew ? '習慣を追加' : '習慣を編集');
+    const d = {
+      name: h?.name || '', color: h?.color || HABIT_COLORS[view.habits.length % HABIT_COLORS.length],
+      icon: h?.icon || 'lucide:' + HABIT_ICONS[view.habits.length % HABIT_ICONS.length],
+      days: (h?.days || [0, 1, 2, 3, 4, 5, 6]).slice(), keepOnOff: !!h?.keepOnOff,
+    };
+    // 見本（名前・色・アイコンを変えるとすぐ変わる）
+    const prev = el('div', 'hPrev');
+    const drawPrev = () => { prev.innerHTML = ''; prev.append(habitIcon({ ...d, name: d.name || '？' }), el('b', '', d.name || '名前を入れてください')); };
+    inn.append(prev);
+
+    const name = el('input', 'inp'); name.value = d.name; name.placeholder = '例：水を飲む'; name.maxLength = 80;
+    name.addEventListener('input', () => { d.name = name.value.trim(); drawPrev(); });
+    inn.append(field('名前', name));
+
+    const cl = el('div', 'fld'); cl.append(el('span', '', '色'), colorPicker(d.color, c => { d.color = c; drawPrev(); }));
+    inn.append(cl);
+
+    const il = el('div', 'fld');
+    il.append(el('span', '', 'アイコン'));
+    const grid = el('div', 'iconGrid');
+    const drawIcons = () => {
+      grid.innerHTML = '';
+      HABIT_ICONS.forEach(n => {
+        const b = btn('ig' + (d.icon === 'lucide:' + n ? ' on' : ''), n, () => { d.icon = 'lucide:' + n; emo.value = ''; drawIcons(); drawPrev(); }, n);
+        grid.append(b);
+      });
+    };
+    const emo = el('input', 'inp emo'); emo.placeholder = '絵文字にする（例 💧）'; emo.maxLength = 8;
+    emo.value = d.icon.startsWith('lucide:') ? '' : d.icon;
+    emo.addEventListener('input', () => { const v = emo.value.trim(); d.icon = v || 'lucide:' + HABIT_ICONS[0]; drawIcons(); drawPrev(); });
+    drawIcons();
+    il.append(grid, emo);
+    inn.append(il);
+
+    const dl = el('div', 'fld');
+    dl.append(el('span', '', 'やる曜日'));
+    const days = el('div', 'dayPick');
+    [1, 2, 3, 4, 5, 6, 0].forEach(i => {
+      const b = btn('dp' + (d.days.includes(i) ? ' on' : ''), WD[i], () => {
+        if (d.days.includes(i)) { if (d.days.length === 1) { toast('1つは選んでください', 'warn'); return; } d.days = d.days.filter(x => x !== i); }
+        else d.days.push(i);
+        b.classList.toggle('on', d.days.includes(i));
+      });
+      days.append(b);
+    });
+    const presets = el('div', 'presets');
+    for (const [l, v] of [['毎日', [0, 1, 2, 3, 4, 5, 6]], ['平日', [1, 2, 3, 4, 5]], ['土日', [0, 6]]]) {
+      presets.append(btn('btn small', l, () => { d.days = v.slice(); days.querySelectorAll('.dp').forEach((b, n) => b.classList.toggle('on', d.days.includes([1, 2, 3, 4, 5, 6, 0][n]))); }));
+    }
+    dl.append(days, presets);
+    inn.append(dl);
+
+    const kl = el('label', 'tog'); const k = el('input'); k.type = 'checkbox'; k.checked = d.keepOnOff;
+    k.addEventListener('change', () => { d.keepOnOff = k.checked; });
+    kl.append(k, '休みの日も続ける（水を飲むなど、仕事と関係ない習慣）');
+    inn.append(kl);
+    if (h && !h.local) inn.append(el('div', 'sub hint', 'タイマー連動やノートとのつながりは、Mac で設定したものがそのまま残ります。'));
+
+    const bt = el('div', 'shBtns');
+    if (!isNew) bt.append(btn('btn danger', ['trash-2', '消す'], () => {
+      if (!confirm(`「${h.name}」を消しますか？\nこれまでのチェックの記録も消えます（Mac で取り込んだときに Mac からも消えます）。`)) return;
+      sheet.close(); commit({ type: 'habit.delete', habit: h.id }); toast('消しました');
+    }));
+    bt.append(btn('btn primary', isNew ? '追加' : '保存', () => {
+      if (!d.name) { name.focus(); toast('名前を入れてください', 'warn'); return; }
+      d.days.sort();
+      if (isNew) {
+        commit({ type: 'habit.add', key: M.newKey(), name: d.name, icon: d.icon, color: d.color, days: d.days, keepOnOff: d.keepOnOff, created: todayKey() });
+      } else {
+        const f = {};
+        if (d.name !== h.name) f.name = d.name;
+        if (d.icon !== h.icon) f.icon = d.icon;
+        if (d.color !== h.color) f.color = d.color;
+        if (d.days.join() !== h.days.slice().sort().join()) f.days = d.days;
+        if (d.keepOnOff !== !!h.keepOnOff) f.keepOnOff = d.keepOnOff;
+        if (Object.keys(f).length) commit({ type: 'habit.edit', habit: h.id, fields: f });
+      }
+      sheet.close();
+      toast(isNew ? '習慣を追加しました' : '保存しました');
+    }));
+    inn.append(bt);
+    drawPrev();
+    sheet.showModal();
+    if (isNew) setTimeout(() => name.focus(), 250);
+  }
+
+  // ================= プロジェクトのシート =================
+  function openProjects() {
+    const inn = $('#sheetIn');
+    sheetHead(inn, 'プロジェクト');
+    const list = el('div', 'plist');
+    if (!view.projects.length) list.append(el('div', 'sub', 'まだプロジェクトはありません'));
+    view.projects.forEach(p => {
+      const r = btn('prow', [], () => openProject(p));
+      const dt = el('i', 'dot'); dt.style.background = p.color;
+      const n = view.tasks.filter(t => t.project_id === p.id && !t.completed).length;
+      r.append(dt, el('b', '', p.name), el('small', '', `進行中 ${n}件`), iconSpan('chevron-right'));
+      list.append(r);
+    });
+    inn.append(list);
+    inn.append(btn('btn primary wide', ['plus', 'プロジェクトを追加'], () => openProject(null)));
+    const note = el('div', 'sub hint', 'プロジェクトを消すとき・メモやリンクを書くときは Mac で行います。');
+    inn.append(note);
+    if (!sheet.open) sheet.showModal();
+  }
+  function openProject(p) {
+    const isNew = !p;
+    const inn = $('#sheetIn');
+    const hd = sheetHead(inn, isNew ? 'プロジェクトを追加' : 'プロジェクトを編集');
+    hd.prepend(btn('iconBtn plain', 'chevron-left', openProjects, 'もどる'));
+    let color = p?.color || HABIT_COLORS[view.projects.length % HABIT_COLORS.length];
+    const name = el('input', 'inp'); name.value = p?.name || ''; name.placeholder = '例：資格の勉強'; name.maxLength = 80;
+    inn.append(field('名前', name));
+    const cl = el('div', 'fld'); cl.append(el('span', '', '色'), colorPicker(color, c => { color = c; }));
+    inn.append(cl);
+    const bt = el('div', 'shBtns');
+    bt.append(btn('btn primary', isNew ? '追加' : '保存', () => {
+      const v = name.value.trim();
+      if (!v) { name.focus(); toast('名前を入れてください', 'warn'); return; }
+      if (isNew) state = M.addOp(state, { type: 'project.add', key: M.newKey(), name: v, color });
+      else {
+        const f = {};
+        if (v !== p.name) f.name = v;
+        if (color !== p.color) f.color = color;
+        if (Object.keys(f).length) state = M.addOp(state, { type: 'project.edit', project: p.id, fields: f });
+      }
+      recompute(); saveState(); render();
+      openProjects();
+      toast(isNew ? 'プロジェクトを追加しました' : '保存しました');
+    }));
+    inn.append(bt);
+    if (isNew) setTimeout(() => name.focus(), 200);
+  }
+
   // ================= 画面の切り替え =================
   const TITLES = { today: '毎日確認', gantt: 'ガントチャート', cal: 'カレンダー', sync: '同期' };
   function switchTab(t) {
@@ -662,7 +864,7 @@
     $('#title').textContent = TITLES[tab];
     const acts = $('#topActs');
     acts.innerHTML = '';
-    if ((tab === 'gantt' || tab === 'cal' || tab === 'today') && state.base) {
+    if (tab === 'gantt' || tab === 'cal' || tab === 'today') {
       acts.append(btn('iconBtn dark', 'plus', () => openTask(null), 'タスクを追加'));
     }
     const badge = $('#syncBadge');
@@ -694,7 +896,6 @@
     }
     applyTheme();
     recompute();
-    if (!state.base) tab = 'sync';
     render();
     // ホーム画面に追加したアプリでは、データが勝手に消されないようお願いする
     try { navigator.storage?.persist?.(); } catch {}

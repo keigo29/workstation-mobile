@@ -46,17 +46,19 @@
     const fix = v => (typeof v === 'string' && map[v] != null ? map[v] : v);
     const ops = state.ops.filter(op => !applied.has(op.id)).map(op => {
       const o = { ...op };
-      if ('task' in o) o.task = fix(o.task);
-      if ('sub' in o) o.sub = fix(o.sub);
+      for (const k of ['task', 'sub', 'habit', 'project', 'project_id']) if (k in o) o[k] = fix(o[k]);
+      if (o.fields && 'project_id' in o.fields) o.fields = { ...o.fields, project_id: fix(o.fields.project_id) };
       return o;
     });
     return { ...state, base: snap, ops, receivedAt: Date.now() };
   }
 
   // ---------- 変更を足す ----------
+  const sameKeys = (x, y) => { const a = Object.keys(x || {}).sort().join(), b = Object.keys(y || {}).sort().join(); return a === b; };
   // 同じもの（同じ習慣の同じ日など）への「付ける／外す」は、最後のものだけ残す
   const sameTarget = (a, b) => a.type === b.type && (
     (a.type === 'habit.set' && a.habit === b.habit && a.day === b.day) ||
+    (a.type === 'habit.edit' && a.habit === b.habit && sameKeys(a.fields, b.fields)) ||
     (a.type === 'dayoff.set' && a.day === b.day) ||
     (a.type === 'sub.done' && a.sub === b.sub) ||
     (a.type === 'task.done' && a.task === b.task));
@@ -87,11 +89,39 @@
     const hmap = new Map(habits.map(h => [h.id, h]));
     const daysOff = new Map(b.daysOff.map(d => [d.day, d.label || '休み']));
     const proj = v => (projects.some(p => p.id === v) ? v : null);
+    let psort = Math.max(0, ...projects.map(p => p.sort || 0));
     let sort = Math.max(0, ...b.tasks.map(t => t.sort || 0));
 
     for (const op of state.ops) {
       switch (op.type) {
         case 'habit.set': { const h = hmap.get(op.habit); if (h) op.on ? h.done.add(op.day) : h.done.delete(op.day); break; }
+        case 'habit.add': {
+          if (hmap.has(op.key)) break;
+          const h = { id: op.key, name: op.name || '無題の習慣', icon: op.icon || '', color: op.color || '#005cff', days: (op.days && op.days.length ? op.days : [0, 1, 2, 3, 4, 5, 6]).slice().sort(),
+            keepOnOff: !!op.keepOnOff, created: op.created, done: new Set(), auto: [], local: true };
+          habits.push(h); hmap.set(op.key, h);
+          break;
+        }
+        case 'habit.edit': {
+          const h = hmap.get(op.habit); if (!h) break;
+          const f = op.fields || {};
+          for (const k of ['name', 'icon', 'color', 'keepOnOff']) if (k in f) h[k] = f[k];
+          if ('days' in f && f.days.length) h.days = f.days.slice().sort();
+          break;
+        }
+        case 'habit.delete': { const h = hmap.get(op.habit); if (h) { habits.splice(habits.indexOf(h), 1); hmap.delete(op.habit); } break; }
+        case 'project.add': {
+          if (projects.some(p => p.id === op.key)) break;
+          projects.push({ id: op.key, name: op.name || '新しいプロジェクト', color: op.color || '#005cff', sort: ++psort, collapsed: 0, local: true });
+          break;
+        }
+        case 'project.edit': {
+          const p = projects.find(x => x.id === op.project); if (!p) break;
+          const f = op.fields || {};
+          if ('name' in f && f.name) p.name = f.name;
+          if ('color' in f) p.color = f.color;
+          break;
+        }
         case 'dayoff.set': op.label == null ? daysOff.delete(op.day) : daysOff.set(op.day, op.label || '休み'); break;
         case 'task.add': {
           if (tasks.has(op.key)) break;
