@@ -17,17 +17,18 @@
 </head>
 <body>
 <header class="top">
-  <h1 id="title">毎日確認</h1>
+  <div class="ttl"><small>WORKSTATION</small><h1 id="title">毎日確認</h1></div>
   <div class="topActs" id="topActs"></div>
 </header>
 
 <main id="view"></main>
 
+<!-- 下のタブ：Mac 版の左の列と同じボタン -->
 <nav class="tabs" id="tabs">
-  <button type="button" data-tab="today"><span data-icon="list-checks"></span><b>毎日確認</b></button>
-  <button type="button" data-tab="gantt"><span data-icon="chart-gantt"></span><b>ガント</b></button>
-  <button type="button" data-tab="cal"><span data-icon="calendar-days"></span><b>カレンダー</b></button>
-  <button type="button" data-tab="sync"><span data-icon="smartphone"></span><b>同期</b><i class="badge" id="syncBadge" hidden></i></button>
+  <button type="button" data-tab="today"><span class="ric" data-icon="calendar-check"></span><b>毎日確認</b></button>
+  <button type="button" data-tab="gantt"><span class="ric" data-icon="chart-gantt"></span><b>ガント</b></button>
+  <button type="button" data-tab="cal"><span class="ric" data-icon="calendar-days"></span><b>カレンダー</b></button>
+  <button type="button" data-tab="sync"><span class="ric" data-icon="smartphone"><i class="badge" id="syncBadge" hidden></i></span><b>同期</b></button>
 </nav>
 
 <!-- 下から出るシート（タスクの編集など） -->

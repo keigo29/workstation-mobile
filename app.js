@@ -90,16 +90,26 @@
     else document.documentElement.dataset.theme = prefs.theme;
   }
 
-  // ---------- 共通の部品 ----------
+  // ---------- 共通の部品（Mac 版と同じ形・同じクラス名） ----------
   const projOf = id => view.projects.find(p => p.id === id);
   const colorOf = t => projOf(t.project_id)?.color || '#717680';
-  function habitIcon(h) {
-    const i = el('span', 'hic');
-    i.style.background = h.color;
+  // 習慣のアイコン：うすく色を付けた丸に、色付きのアイコン
+  function habitIcon(h, cls = 'hb-icon') {
+    const i = el('span', cls);
+    i.style.setProperty('--c', h.color);
     if (h.icon && h.icon.startsWith('lucide:')) i.innerHTML = icon(h.icon.slice(7));
-    else i.textContent = h.icon || h.name.slice(0, 1);
+    else i.textContent = h.icon || (h.name || '？').slice(0, 1);
     return i;
   }
+  // 見出し（アイコン＋文字、右に小さな部品）
+  function panelHead(ic, text, right) {
+    const h = el('h3');
+    h.innerHTML = icon(ic);
+    h.append(text);
+    if (right) { const r = el('span', 'right'); [].concat(right).forEach(x => r.append(x)); h.append(r); }
+    return h;
+  }
+  const panel = (cls = '') => el('section', 'panel ' + cls);
   // 習慣のアイコンと色（Mac 版と同じもの）
   const HABIT_COLORS = ['#005cff', '#00c230', '#ff5a00', '#8600ff', '#1fb8cc', '#f2280d', '#ffae00', '#717680'];
   const HABIT_ICONS = ['droplet', 'glass-water', 'coffee', 'apple', 'salad', 'utensils', 'pill', 'book-open', 'notebook-pen', 'pen-line', 'languages', 'graduation-cap',
@@ -109,20 +119,24 @@
   let habitEdit = false;   // 毎日確認の「編集」中（押すとチェックではなく編集を開く）
   // 選んだ値（文字）から、プロジェクトのID（Mac の数字か、スマホで作った 'm:…'）に戻す
   const projIdOf = v => (v ? view.projects.find(p => String(p.id) === v)?.id ?? null : null);
-  // タスク1行（チェックで完了・押すと編集）
+
+  // タスク1行（Mac のホームの「今日のタスク」と同じ形）：丸を押すと完了・名前を押すと編集
   function taskRow(t, opt = {}) {
-    const r = el('div', 'trow' + (t.completed ? ' done' : ''));
-    const ck = btn('check', [], () => setDone(t, !t.completed), t.completed ? 'まだにする' : '完了にする');
-    const s = el('span'); s.innerHTML = icon('check'); ck.append(s);
-    const ttl = btn('ttl', [], () => openTask(t));
-    ttl.append(el('b', '', t.title));
-    const meta = el('small');
-    const dt = el('i', 'dot'); dt.style.background = colorOf(t);
-    meta.append(dt, projOf(t.project_id)?.name || 'プロジェクトなし');
-    if (!opt.noDate && t.due) meta.append(' ・ ' + (t.start && t.start !== t.due ? `${md(t.start)}〜${md(t.due)}` : md(t.due)));
-    if (t.subs.length) meta.append(` ・ ${t.subs.filter(x => x.done).length}/${t.subs.length}`);
-    if (t.repeat) meta.append(' ・ ' + M.repeatLabel(t.repeat));
     const today = todayKey();
+    const r = el('div', 'trow' + (t.completed ? ' done' : ''));
+    r.style.setProperty('--c', colorOf(t));
+    const ck = btn('tchk' + (t.completed ? ' on' : ''), 'check', () => setDone(t, !t.completed), t.completed ? 'まだにする' : '完了にする');
+    const ttl = btn('ttl', [], () => openTask(t));
+    const nm = el('b');
+    if (t.milestone) nm.insertAdjacentHTML('beforeend', icon('flag'));
+    nm.append(t.title);
+    ttl.append(nm);
+    const meta = el('small');
+    meta.append(el('i', 'dot'), projOf(t.project_id)?.name || 'プロジェクトなし');
+    const sd = k => { const d = M.parseKey(k); return `${d.getMonth() + 1}/${d.getDate()}`; };
+    if (!opt.noDate && t.due) meta.append(` ・ ${t.start && t.start !== t.due ? `${sd(t.start)}〜${sd(t.due)}` : sd(t.due)}`);
+    if (t.subs.length) meta.append(` ・ ${t.subs.filter(x => x.done).length}/${t.subs.length}`);
+    if (t.repeat) { meta.insertAdjacentHTML('beforeend', icon('repeat')); }
     if (!t.completed && t.due && t.due < today) meta.append(el('em', 'bad', '期限切れ'));
     else if (M.behind(t, today, view.daysOff)) meta.append(el('em', 'slow', '遅れ'));
     ttl.append(meta);
@@ -132,6 +146,34 @@
   function setDone(t, done) {
     commit({ type: 'task.done', task: t.id, done });
     if (done && t.repeat) toast('繰り返しの次の回は、Mac で取り込んだときに作られます');
+  }
+  // 確認項目の1行（Mac の毎日確認と同じ形）：左の丸でチェック
+  function habitRow(h, day, opt = {}) {
+    const today = todayKey(), off = view.daysOff;
+    const on = h.done.has(day);
+    const due = M.isDue(h, day, off);
+    const r = el('div', 'hb-row' + (habitEdit && !opt.noEdit ? ' editing' : '') + (!due && !on ? ' rest' : ''));
+    r.style.setProperty('--c', h.color);
+    const toggle = () => {
+      if (habitEdit && !opt.noEdit) { openHabit(h); return; }
+      if (day > today) { toast('先の日はチェックできません', 'warn'); return; }
+      commit({ type: 'habit.set', habit: h.id, day, on: !on });
+      if (!on && navigator.vibrate) navigator.vibrate(12);
+    };
+    const ck = btn('hb-chk' + (on ? ' done' : '') + (!due ? ' off' : ''), 'check', toggle, on ? 'チェックを外す' : 'チェックする');
+    const nb = btn('hb-name', [], toggle, h.name);
+    const tx = el('span', 'txt');
+    tx.append(el('span', 'nm', h.name));
+    const st = M.streak(h, today, off);
+    let sm;
+    if (!due) sm = el('small', '', off.has(day) && !h.keepOnOff ? '休みの日はお休み' : 'この曜日はお休み');
+    else if (st) { sm = el('small', 'hot'); sm.innerHTML = icon('flame'); sm.append(`${st}日連続`); }
+    else sm = el('small', '', h.days.length === 7 ? '毎日' : h.days.length === 5 && !h.days.includes(0) && !h.days.includes(6) ? '平日' : h.days.slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map(x => WD[x]).join('・'));
+    tx.append(sm);
+    nb.append(habitIcon(h), tx);
+    r.append(ck, nb);
+    if (habitEdit && !opt.noEdit) r.append(btn('hb-edit', 'chevron-right', () => openHabit(h), '編集'));
+    return r;
   }
 
   // ================= 毎日確認 =================
@@ -144,229 +186,271 @@
     const d0 = M.parseKey(selDay);
     const mon = M.addDays(selDay, -((d0.getDay() + 6) % 7));
     const week = el('div', 'week');
-    week.append(btn('iconBtn', 'chevron-left', () => { selDay = M.addDays(selDay, -7); render(); }, '前の週'));
+    week.append(btn('iconBtn plain', 'chevron-left', () => { selDay = M.addDays(selDay, -7); render(); }, '前の週'));
     for (let i = 0; i < 7; i++) {
-      const k = M.addDays(mon, i);
+      const k = M.addDays(mon, i), d = M.parseKey(k);
       const sc = M.dayScore(view.habits, k, off);
-      const b = btn('wday' + (k === today ? ' today' : '') + (k === selDay ? ' sel' : '') + (k > today ? ' future' : '') + (off.has(k) ? ' offd' : ''), [],
+      const b = btn('wday' + (k === today ? ' today' : '') + (k === selDay ? ' sel' : '') + (k > today ? ' future' : '') + (off.has(k) ? ' offd' : '') + (sc.due && sc.done >= sc.due ? ' all' : ''), [],
         () => { if (k <= today) { selDay = k; render(); } }, md(k));
-      b.append(el('small', '', WD[M.parseKey(k).getDay()]), el('b', '', String(M.parseKey(k).getDate())));
+      b.append(el('small', '', WD[d.getDay()]), el('b', '', String(d.getDate())));
       const bar = el('i'); const f = el('span'); f.style.width = (sc.due ? Math.round(sc.done / sc.due * 100) : 0) + '%'; bar.append(f);
       b.append(bar);
       week.append(b);
     }
-    const nx = btn('iconBtn', 'chevron-right', () => { selDay = M.addDays(selDay, 7) > today ? today : M.addDays(selDay, 7); render(); }, '次の週');
+    const nx = btn('iconBtn plain', 'chevron-right', () => { selDay = M.addDays(selDay, 7) > today ? today : M.addDays(selDay, 7); render(); }, '次の週');
     nx.disabled = M.addDays(mon, 7) > today;
     week.append(nx);
     main.append(week);
 
-    // 進み具合のリング
+    // ---- 今日（リング・確認項目） ----
     const sc = M.dayScore(view.habits, selDay, off);
-    const card = el('div', 'card ringCard');
-    const ring = el('div', 'ring');
-    const pct = sc.due ? sc.done / sc.due : 0;
-    const C = 2 * Math.PI * 40;
-    ring.innerHTML = `<svg viewBox="0 0 92 92"><circle class="bgc" cx="46" cy="46" r="40" fill="none" stroke-width="9"/>
-      <circle class="fgc" cx="46" cy="46" r="40" fill="none" stroke-width="9" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/></svg>`;
-    ring.append(el('div', 'num', sc.due ? Math.round(pct * 100) + '%' : '—'));
-    const tx = el('div', 'ringTxt');
-    tx.append(el('b', '', selDay === today ? '今日' : md(selDay)));
     const isOff = off.has(selDay);
-    tx.append(el('div', 'sub', isOff ? `${off.get(selDay)}の日（習慣の予定から外れます）` : sc.due ? `${sc.due}個のうち ${sc.done}個できました` : 'この日にやる習慣はありません'));
-    tx.append(btn('btn small' + (isOff ? ' white' : ''), [isOff ? 'x' : 'sunrise', isOff ? '休みをやめる' : (selDay === today ? '今日を休みにする' : 'この日を休みにする')],
+    const p1 = panel('hb-today');
+    const top = el('div', 'hb-todayTop' + (sc.due && sc.done >= sc.due ? ' all' : ''));
+    const ring = el('div', 'hb-ring');
+    const C = 2 * Math.PI * 28, pct = sc.due ? sc.done / sc.due : 0;
+    ring.innerHTML = `<svg viewBox="0 0 64 64"><circle class="bgc" cx="32" cy="32" r="28"/><circle class="fgc" cx="32" cy="32" r="28" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}"/></svg>`;
+    ring.append(el('b', '', sc.due ? `${sc.done}/${sc.due}` : '—'));
+    const tx = el('div', 'hb-todayText');
+    tx.append(el('div', 'date', md(selDay) + (selDay === today ? '' : '')));
+    const msg = el('div', 'msg');
+    if (isOff) { msg.innerHTML = icon('tree-palm'); msg.append(`${off.get(selDay)}の日（予定から外して計算）`); }
+    else if (!sc.due) msg.append(view.habits.length ? 'この日にやる項目はありません' : 'まだ確認項目がありません');
+    else if (sc.done >= sc.due) { msg.innerHTML = icon('party-popper'); msg.append('全部できました'); }
+    else msg.append(`あと ${sc.due - sc.done} つ`);
+    tx.append(msg);
+    top.append(ring, tx);
+    p1.append(top);
+    p1.append(btn('btn white hb-offBtn', ['tree-palm', isOff ? '休みをやめる' : (selDay === today ? '今日を休みにする' : 'この日を休みにする')],
       () => commit({ type: 'dayoff.set', day: selDay, label: isOff ? null : '休み' })));
-    card.append(ring, tx);
-    main.append(card);
 
-    // 習慣
+    const list = el('div', 'hb-list');
     const due = view.habits.filter(h => M.isDue(h, selDay, off));
     const rest = view.habits.filter(h => !M.isDue(h, selDay, off) && h.created <= selDay);
-    const hc = el('div', 'card');
-    const h2 = el('h2', '', '習慣');
-    if (!habitEdit) h2.append(el('span', 'cnt', `${sc.done} / ${sc.due}`));
-    if (view.habits.length) {
-      const eb = btn('btn small' + (habitEdit ? ' primary' : ''), habitEdit ? '完了' : '編集', () => { habitEdit = !habitEdit; render(); });
-      if (habitEdit) eb.style.marginLeft = 'auto';
-      h2.append(eb);
+    (habitEdit ? view.habits : due).forEach(h => list.append(habitRow(h, selDay)));
+    if (!habitEdit && rest.length) {
+      list.append(el('div', 'hb-sep', 'お休みの項目'));
+      rest.forEach(h => list.append(habitRow(h, selDay)));
     }
-    hc.append(h2);
     if (!view.habits.length) {
       const e = el('div', 'empty');
       e.innerHTML = icon('sprout');
       e.append(el('p', '', '毎日続けたいことを追加しましょう（水を飲む・読書 15分 など）'));
-      hc.append(e);
+      list.append(e);
     }
-    const habitBtn = (h, dim) => {
-      const on = h.done.has(selDay);
-      const b = btn('habit' + (on && !habitEdit ? ' done' : '') + (dim && !habitEdit ? ' rest' : '') + (habitEdit ? ' editing' : ''), [], () => {
-        if (habitEdit) { openHabit(h); return; }
-        commit({ type: 'habit.set', habit: h.id, day: selDay, on: !on });
-        if (!on && navigator.vibrate) navigator.vibrate(12);
-      }, h.name);
-      const nm = el('span', 'hname');
-      nm.append(el('b', '', h.name));
-      const st = M.streak(h, today, off);
-      const sm = el('small');
-      if (dim) sm.append(view.daysOff.has(selDay) && !h.keepOnOff ? '休みの日はお休み' : 'この曜日はお休み');
-      else if (st) { sm.append(iconSpan('flame'), `${st}日連続`); }
-      else sm.append(h.days.length === 7 ? '毎日' : h.days.map(x => WD[x]).join('・'));
-      nm.append(sm);
-      const ck = el('span', habitEdit ? 'chev' : 'check'); ck.innerHTML = icon(habitEdit ? 'chevron-right' : 'check');
-      b.append(habitIcon(h), nm, ck);
-      return b;
-    };
-    if (habitEdit) {
-      // 編集中は全部の習慣を並べる（まだ始まっていない習慣も）
-      view.habits.forEach(h => hc.append(habitBtn(h, false)));
-    } else due.forEach(h => hc.append(habitBtn(h, false)));
-    if (rest.length && !habitEdit) {
-      const sub = el('div', 'sub', 'お休みの習慣'); sub.style.margin = '12px 0 2px';
-      hc.append(sub);
-      rest.forEach(h => hc.append(habitBtn(h, true)));
-    }
-    const addH = btn('btn wide addHabit', ['plus', '習慣を追加'], () => openHabit(null));
-    hc.append(addH);
-    main.append(hc);
+    const lh = el('div', 'hb-listHead');
+    lh.append(el('span', '', '確認項目'));
+    if (view.habits.length) lh.append(btn('linkBtn', habitEdit ? '完了' : '編集', () => { habitEdit = !habitEdit; render(); }));
+    p1.append(lh, list, btn('hb-add', ['plus', '確認項目を追加'], () => openHabit(null)));
+    main.append(p1);
 
-    // その日のタスク
+    // ---- この月のまとめ（Mac の毎日確認の上の4つ） ----
+    if (view.habits.length) {
+      const m0 = selDay.slice(0, 8) + '01';
+      const mEnd = M.keyOf(new Date(d0.getFullYear(), d0.getMonth() + 1, 0));
+      const until = mEnd < today ? mEnd : today;
+      let due2 = 0, done2 = 0, all = 0, offN = 0;
+      for (let k = m0; k <= mEnd; k = M.addDays(k, 1)) {
+        if (off.has(k)) offN++;
+        if (k > until) continue;
+        const s = M.dayScore(view.habits, k, off);
+        due2 += s.due; done2 += s.done;
+        if (s.due && s.done >= s.due) all++;
+      }
+      const kp = el('div', 'kpis');
+      const kpi = (ic, label, value, unit, note) => {
+        const k = el('div', 'kpi');
+        const l = el('div', 'label'); l.innerHTML = icon(ic); l.append(label);
+        const v = el('div', 'value', value); if (unit) v.append(el('small', '', unit));
+        k.append(l, v, el('div', 'note', note));
+        return k;
+      };
+      kp.append(kpi('target', `${d0.getMonth() + 1}月の達成率`, due2 ? String(Math.round(done2 / due2 * 100)) : '—', due2 ? '%' : '', `${done2} / ${due2} 回`),
+        kpi('repeat', '達成回数', String(done2), '回', `予定 ${due2} 回`),
+        kpi('trophy', '全部できた日', String(all), '日', '予定がすべてできた日'),
+        kpi('tree-palm', '休みの日', String(offN), '日', '予定から外して計算'));
+      main.append(kp);
+
+      // 項目ごとの達成率（この月）
+      const p2 = panel();
+      p2.append(panelHead('chart-bar', '項目ごとの達成率', el('span', '', `${d0.getMonth() + 1}月`)));
+      const ch = el('div', 'hb-hchart');
+      for (const h of view.habits) {
+        let tg = 0, dn = 0;
+        for (let k = m0 > h.created ? m0 : h.created; k <= until; k = M.addDays(k, 1)) if (M.isDue(h, k, off)) { tg++; if (h.done.has(k)) dn++; }
+        const rate = tg ? Math.round(dn / tg * 100) : null;
+        const lb = el('div', 'hl'); lb.append(habitIcon(h), el('span', '', h.name));
+        const tr = el('div', 'track'); const f = el('span'); f.style.width = (rate || 0) + '%'; f.style.setProperty('--c', h.color); tr.append(f);
+        const v = el('div', 'hv', rate == null ? '—' : rate + '%'); v.append(el('small', '', `${dn}/${tg}`));
+        ch.append(lb, tr, v);
+      }
+      p2.append(ch);
+      main.append(p2);
+    }
+
+    // ---- その日のタスク ----
     const ts = view.tasks.filter(t => M.onDay(t, selDay) && (!t.completed || prefs.showDone || t.completed_at >= M.parseKey(selDay).getTime()));
-    const tc = el('div', 'card');
-    const t2 = el('h2', '', selDay === today ? '今日のタスク' : 'この日のタスク');
-    t2.append(el('span', 'cnt', `${ts.filter(t => t.completed).length} / ${ts.length}`));
-    tc.append(t2);
-    if (!ts.length) tc.append(el('div', 'sub', '期間に入っているタスクはありません'));
-    ts.forEach(t => tc.append(taskRow(t, { noDate: true })));
-    main.append(tc);
+    const p3 = panel();
+    p3.append(panelHead('sun', selDay === today ? '今日のタスク' : 'この日のタスク', el('span', '', `${ts.filter(t => t.completed).length} / ${ts.length}`)));
+    if (!ts.length) p3.append(el('div', 'noData', '期間に入っているタスクはありません'));
+    ts.forEach(t => p3.append(taskRow(t, { noDate: true })));
+    p3.append(btn('addTask', ['plus', 'タスクを追加'], () => openTask(null)));
+    main.append(p3);
   }
 
-  // ================= ガントチャート =================
-  const G_BEFORE = 14, G_AFTER = 75;
+  // ================= ガントチャート（Mac と同じバー：うすい色の地に、終えた分を濃く。名前はバーの右） =================
+  const G_BEFORE = 14, G_AFTER = 75, DW = 34;
+  function projectCards(main) {
+    const box = el('div', 'pcards');
+    const today = todayKey();
+    for (const p of view.projects) {
+      const all = view.tasks.filter(t => t.project_id === p.id);
+      const done = all.filter(t => t.completed).length;
+      const next = all.filter(t => !t.completed && t.due).sort((a, b) => (a.due < b.due ? -1 : 1))[0];
+      const c = btn('pcard', [], () => openProject(p), p.name);
+      c.style.setProperty('--c', p.color);
+      const f = el('div', 'pcFront');
+      f.append(el('div', 'pcName', p.name));
+      const meta = el('div', 'pcMeta');
+      meta.append(el('span', '', `残り ${all.length - done}件`), el('span', '', `完了 ${done}/${all.length}`));
+      if (next) { const s = el('span'); s.innerHTML = icon('clock'); s.append(next.due === today ? '今日' : next.due < today ? '期限切れ' : md(next.due).replace(/\(.\)/, '')); meta.append(s); }
+      f.append(meta);
+      const pr = el('div', 'pcBar'); const pf = el('i');
+      pf.style.width = (all.length ? Math.round(all.reduce((a, t) => a + M.progress(t), 0) / all.length * 100) : 0) + '%';
+      pr.append(pf); f.append(pr);
+      c.append(f);
+      box.append(c);
+    }
+    box.append(btn('pcAdd', ['folder-plus', 'プロジェクトを追加'], () => openProject(null)));
+    main.append(box);
+  }
   function renderGantt(main) {
     const today = todayKey();
-    // 右端：いちばん遅い期限の1週間後まで（少なくとも今日から G_AFTER 日。長くても1年半）
     const tasks = view.tasks.filter(t => t.due && (prefs.showDone || !t.completed));
+    // 右端：いちばん遅い期限の1週間後まで（少なくとも今日から G_AFTER 日。長くても1年半）
     const lastDue = tasks.reduce((m, t) => (t.due > m ? t.due : m), today);
     const from = M.addDays(today, -G_BEFORE);
     const days = Math.min(550, Math.max(G_BEFORE + G_AFTER + 1, M.diffDays(from, lastDue) + 8));
-    const DW = 30;
+    const W = days * DW;
+    const xOf = k => M.diffDays(from, k) * DW;
 
-    const bar = el('div', 'gbar');
+    const tool = el('div', 'gtool');
     const seg = el('div', 'seg');
     seg.append(btn(prefs.showDone ? '' : 'on', '進行中', () => { prefs.showDone = false; savePrefs(); render(); }),
       btn(prefs.showDone ? 'on' : '', 'すべて', () => { prefs.showDone = true; savePrefs(); render(); }));
-    const pb = btn('btn small white', ['folder-kanban', 'プロジェクト'], openProjects);
-    pb.style.marginLeft = 'auto';
-    bar.append(seg, pb);
-    main.append(bar);
+    const goToday = btn('btn white small', ['locate-fixed', '今日'], () => { sc.scrollTo({ left: (G_BEFORE - 2) * DW, behavior: 'smooth' }); });
+    tool.append(seg, goToday);
+    main.append(tool);
+    projectCards(main);
 
     const wrap = el('div', 'gwrap');
     const sc = el('div', 'gscroll');
     const inner = el('div', 'ginner');
+    inner.style.width = W + 'px';
+    inner.style.setProperty('--dw', DW + 'px');
     sc.append(inner);
     wrap.append(sc);
-    const trackW = days * DW;
 
-    // 見出し（日付）
-    const head = el('div', 'grow ghead');
-    head.append(el('div', 'gname', 'タスク'));
-    const ht = el('div', 'gtrack'); ht.style.width = trackW + 'px';
-    const dl = el('div', 'gdays');
+    // 見出し：月と日
+    const head = el('div', 'ghead');
+    for (let i = 0; i < days;) {
+      const d = M.parseKey(M.addDays(from, i));
+      const left = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() - d.getDate() + 1;
+      const n = Math.min(left, days - i);
+      const mc = el('div', 'mcell'); mc.style.left = i * DW + 'px'; mc.style.width = n * DW + 'px';
+      mc.append(el('span', '', `${d.getFullYear() !== M.parseKey(today).getFullYear() ? d.getFullYear() + '年' : ''}${d.getMonth() + 1}月`));
+      head.append(mc);
+      i += n;
+    }
     for (let i = 0; i < days; i++) {
       const k = M.addDays(from, i), d = M.parseKey(k);
-      const c = el('div', ([0, 6].includes(d.getDay()) ? 'we' : '') + (k === today ? ' td' : ''));
-      c.append(el('em', '', d.getDate() === 1 || i === 0 ? `${d.getMonth() + 1}月` : ''), el('b', '', String(d.getDate())), WD[d.getDay()]);
-      dl.append(c);
+      const c = el('div', 'dcell' + ([0, 6].includes(d.getDay()) ? ' we' : '') + (k === today ? ' today' : '') + (view.daysOff.has(k) ? ' off' : ''));
+      c.style.left = i * DW + 'px';
+      c.append(el('span', '', String(d.getDate())));
+      head.append(c);
     }
-    ht.append(dl);
-    head.append(ht);
     inner.append(head);
 
-    // 列の背景（週末・休みの日）と今日の線：本体の行全体に重ねる
-    const body = el('div');
-    body.style.position = 'relative';
-    const cols = el('div', 'gcols');
-    cols.style.left = 'var(--nw)';
+    // 本体：週末・休みの日・今日の線を背景に
+    const body = el('div', 'gbody');
+    const bg = el('div', 'gbg');
     for (let i = 0; i < days; i++) {
       const k = M.addDays(from, i), wd = M.parseKey(k).getDay();
-      cols.append(el('div', view.daysOff.has(k) ? 'off' : [0, 6].includes(wd) ? 'we' : ''));
+      if (view.daysOff.has(k)) { const o = el('i', 'g-off'); o.style.left = i * DW + 'px'; bg.append(o); }
+      else if (wd === 0 || wd === 6) { const o = el('i', 'g-we'); o.style.left = i * DW + 'px'; bg.append(o); }
     }
-    body.append(cols);
-    const tl = el('div', 'gtoday');
-    tl.style.left = `calc(var(--nw) + ${G_BEFORE * DW + DW / 2 - 1}px)`;
-    body.append(tl);
+    const tl = el('i', 'g-now'); tl.style.left = (G_BEFORE * DW + DW / 2 - 1) + 'px';
+    bg.append(tl);
+    body.append(bg);
 
     const groups = [...view.projects.map(p => ({ p, list: tasks.filter(t => t.project_id === p.id) })),
       { p: { id: 0, name: 'プロジェクトなし', color: '#717680' }, list: tasks.filter(t => !projOf(t.project_id)) }].filter(g => g.list.length);
     if (!groups.length) {
-      const e = el('div', 'empty', prefs.showDone ? '日付のあるタスクはありません' : '進行中のタスクはありません');
-      e.style.position = 'sticky'; e.style.left = '0'; e.style.width = 'calc(100vw - 24px)';
+      const e = el('div', 'empty');
+      e.innerHTML = icon('chart-gantt');
+      e.append(el('p', '', prefs.showDone ? '日付のあるタスクはありません' : '進行中のタスクはありません'));
+      e.append(btn('btn primary small', ['plus', 'タスクを追加'], () => openTask(null)));
       body.append(e);
     }
-    for (const g of groups) {
+    const label = (t, x, cls = '') => {
+      const today2 = today, lb = btn('blabel ' + cls + (t.completed ? ' done' : ''), [], () => openTask(t), t.title);
+      if (t.completed) lb.insertAdjacentHTML('beforeend', icon('check'));
+      else if (t.due < today2) { lb.insertAdjacentHTML('beforeend', icon('triangle-alert')); lb.lastChild.classList.add('bad'); }
+      else if (M.behind(t, today2, view.daysOff)) { lb.insertAdjacentHTML('beforeend', icon('clock')); lb.lastChild.classList.add('slow'); }
+      if (t.repeat) lb.insertAdjacentHTML('beforeend', icon('repeat'));
+      lb.append(el('span', '', t.title));
+      lb.style.left = x + 'px';
+      return lb;
+    };
+    groups.forEach((g, gi) => {
       const closed = prefs.closed.includes(g.p.id);
-      const pr = el('div', 'grow gproj' + (closed ? ' closed' : ''));
-      const nb = btn('gname', ['chevron-down'], () => {
+      const all = g.list;
+      const dn = all.filter(t => t.completed).length;
+      const row = el('div', 'grow grp' + (gi ? '' : ' first') + (closed ? ' closed' : ''));
+      row.style.setProperty('--c', g.p.color);
+      // 名前（左に止まる）
+      const nb = btn('grpName', ['chevron-down'], () => {
         prefs.closed = closed ? prefs.closed.filter(x => x !== g.p.id) : [...prefs.closed, g.p.id];
         savePrefs(); render();
       });
-      const dt = el('i', 'dot'); dt.style.background = g.p.color;
-      const nm = el('span', '', g.p.name);
-      nb.append(dt, nm);
-      pr.append(nb);
-      const pt = el('div', 'gtrack'); pt.style.width = trackW + 'px';
-      // 折りたたみ中は、まとめた期間を薄く出す
-      if (closed) {
-        const s = g.list.reduce((a, t) => (t.start < a ? t.start : a), g.list[0].start), e = g.list.reduce((a, t) => (t.due > a ? t.due : a), g.list[0].due);
-        const x = Math.max(0, M.diffDays(from, s)), x2 = Math.min(days - 1, M.diffDays(from, e));
-        if (x2 >= 0 && x < days) {
-          const b = el('div', 'bar'); b.style.cssText = `left:${x * DW + 2}px;width:${(x2 - x + 1) * DW - 4}px;background:${g.p.color};opacity:.35;top:9px;height:20px`;
-          pt.append(b);
-        }
-      }
-      pr.append(pt);
-      body.append(pr);
-      if (closed) continue;
-      for (const t of g.list) {
-        const r = el('div', 'grow gt');
-        const n = btn('gname' + (t.completed ? ' done' : ''), [], () => openTask(t));
-        n.append(el('span', '', t.title));
-        r.append(n);
-        const tr = el('div', 'gtrack'); tr.style.width = trackW + 'px';
-        const x = M.diffDays(from, t.start), x2 = M.diffDays(from, t.due);
-        if (x2 >= 0 && x < days) {
-          if (t.milestone) {
-            const m = btn('ms', [], () => openTask(t), t.title);
-            m.style.left = `${x2 * DW + DW / 2 - 10}px`;
-            const i = el('i'); i.style.background = colorOf(t); m.append(i);
-            tr.append(m);
-          } else {
-            const a = Math.max(0, x), b2 = Math.min(days - 1, x2);
-            const late = !t.completed && t.due < today, slow = M.behind(t, today, view.daysOff);
-            const b = btn('bar' + (t.completed ? ' done' : '') + (late ? ' late' : slow ? ' behind' : ''), [], () => openTask(t), t.title);
-            const left = a * DW + 2, width = (b2 - a + 1) * DW - 4;
-            b.style.left = `${left}px`;
-            b.style.width = `${width}px`;
-            b.style.background = colorOf(t);
-            // 実際の進み具合（明るい部分）は、バー全体（画面の外にはみ出した分も含む）に対する割合
-            const full0 = x * DW + 2, fullW = (x2 - x + 1) * DW - 4;
-            const pf = el('i', 'pf'); pf.style.width = Math.max(0, Math.min(width, full0 + fullW * M.progress(t) - left)) + 'px';
-            b.append(pf);
-            // 目標の位置に縦の線
-            const g = M.target(t, today, view.daysOff);
-            if (g > 0 && g < 1) {
-              const gx = full0 + fullW * g - left;
-              if (gx > 0 && gx < width) { const m = el('i', 'tgt'); m.style.left = gx + 'px'; b.append(m); }
-            }
-            b.append(el('span', '', b2 - a >= 1 ? t.title : ''));
-            tr.append(b);
+      nb.append(el('i', 'dot'), el('span', 'nm', g.p.name), el('small', '', `${dn}/${all.length}`));
+      row.append(nb);
+      // プロジェクト全体の期間と進み具合
+      const s = all.reduce((a, t) => (t.start < a ? t.start : a), all[0].start), e = all.reduce((a, t) => (t.due > a ? t.due : a), all[0].due);
+      const pb = el('div', 'pbar');
+      pb.style.left = xOf(s) + 'px'; pb.style.width = (M.diffDays(s, e) + 1) * DW + 'px';
+      const pf = el('i'); pf.style.width = Math.round(all.reduce((a, t) => a + M.progress(t), 0) / all.length * 100) + '%';
+      pb.append(pf);
+      row.append(pb);
+      body.append(row);
+      if (closed) return;
+      for (const t of all) {
+        const r = el('div', 'grow');
+        r.style.setProperty('--c', colorOf(t));
+        const x = xOf(t.start);
+        if (t.milestone) {
+          const m = btn('ms' + (t.completed ? ' isdone' : '') + (!t.completed && t.due < today ? ' late' : ''), [], () => openTask(t), t.title);
+          m.style.left = (xOf(t.due) + DW / 2 - 10) + 'px';
+          r.append(m, label(t, xOf(t.due) + DW / 2 + 16));
+        } else {
+          const w = (M.diffDays(t.start, t.due) + 1) * DW, prog = Math.round(M.progress(t) * 100);
+          const late = !t.completed && t.due < today, slow = !late && M.behind(t, today, view.daysOff);
+          const b = btn('bar' + (t.completed ? ' isdone' : '') + (late ? ' late' : slow ? ' behind' : ''), [], () => openTask(t), t.title);
+          b.style.left = x + 'px'; b.style.width = w + 'px';
+          const pr = el('div', 'prog'); pr.style.width = prog + '%'; b.append(pr);
+          const g2 = M.target(t, today, view.daysOff);
+          if (g2 > 0 && g2 < 1) { const m = el('i', 'tgt'); m.style.left = Math.round(g2 * 100) + '%'; b.append(m); }
+          if (w >= 50) {
+            const pc = el('div', 'pct' + (prog < 30 ? ' lo' : ''), prog + '%');
+            if (prog < 30) pc.style.paddingLeft = `calc(${prog}% + 8px)`;
+            b.append(pc);
           }
+          r.append(b, label(t, x + w + 8));
         }
-        r.append(tr);
         body.append(r);
       }
-    }
+    });
     inner.append(body);
-    inner.style.width = `calc(var(--nw) + ${trackW}px)`;
     main.append(wrap);
     sc.scrollLeft = ganttScroll ?? (G_BEFORE - 2) * DW;
     let raf = 0;
@@ -375,143 +459,170 @@
     // 日付のないタスク
     const nod = view.tasks.filter(t => !t.due && (prefs.showDone || !t.completed));
     if (nod.length) {
-      const c = el('div', 'card undated');
-      const h = el('h2', '', '日付なし'); h.append(el('span', 'cnt', String(nod.length)));
-      c.append(h);
-      nod.forEach(t => c.append(taskRow(t)));
-      main.append(c);
+      const p = panel();
+      p.append(panelHead('inbox', '日付なし', el('span', '', `${nod.length}件`)));
+      nod.forEach(t => p.append(taskRow(t)));
+      main.append(p);
     }
   }
 
-  // ================= カレンダー =================
+  // ================= カレンダー（Mac の月のカレンダーと同じ：タスクは日をまたぐバー） =================
+  const LANES = 3;
   function renderCal(main) {
     const today = todayKey();
     const nav = el('div', 'mnav');
-    nav.append(el('b', '', `${calMonth.getFullYear()}年${calMonth.getMonth() + 1}月`),
-      btn('iconBtn', 'chevron-left', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); render(); }, '前の月'),
-      btn('btn small white', '今日', () => { const d = new Date(); calMonth = new Date(d.getFullYear(), d.getMonth(), 1); calSel = today; render(); }),
-      btn('iconBtn', 'chevron-right', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); render(); }, '次の月'));
+    nav.append(btn('iconBtn', 'chevron-left', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); render(); }, '前の月'),
+      el('b', '', `${calMonth.getFullYear()}年${calMonth.getMonth() + 1}月`),
+      btn('iconBtn', 'chevron-right', () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); render(); }, '次の月'),
+      btn('btn white small', ['locate-fixed', '今月'], () => { const d = new Date(); calMonth = new Date(d.getFullYear(), d.getMonth(), 1); calSel = today; render(); }));
     main.append(nav);
 
-    const cal = el('div', 'cal');
-    const wd = el('div', 'wd');
-    [1, 2, 3, 4, 5, 6, 0].forEach(i => wd.append(el('span', '', WD[i])));
+    const cal = el('div', 'cal-month');
+    const wd = el('div', 'cal-wd');
+    [1, 2, 3, 4, 5, 6, 0].forEach(i => wd.append(el('span', i === 0 || i === 6 ? 'we' : '', WD[i])));
     cal.append(wd);
-    const grid = el('div', 'cgrid');
     const first = M.keyOf(calMonth);
     const start = M.addDays(first, -((calMonth.getDay() + 6) % 7));
     const weeks = Math.ceil((M.diffDays(start, first) + new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 0).getDate()) / 7);
-    const active = view.tasks.filter(t => t.due && !t.completed);
-    for (let i = 0; i < weeks * 7; i++) {
-      const k = M.addDays(start, i), d = M.parseKey(k);
-      const off = view.daysOff.get(k);
-      const c = btn('cd' + (d.getMonth() !== calMonth.getMonth() ? ' other' : '') + (k === today ? ' today' : '') + (k === calSel ? ' sel' : '') + (off ? ' off' : ''),
-        [], () => { calSel = k; if (d.getMonth() !== calMonth.getMonth()) calMonth = new Date(d.getFullYear(), d.getMonth(), 1); render(); }, md(k));
-      c.append(el('span', 'n', String(d.getDate())));
-      if (off) c.append(el('span', 'ol', off));
-      const ts = active.filter(t => M.onDay(t, k));
-      ts.slice(0, 3).forEach(t => { const l = el('i', 'ln'); l.style.background = colorOf(t); c.append(l); });
-      if (ts.length > 3) c.append(el('span', 'more', `+${ts.length - 3}`));
-      if (k <= today) {
-        const s = M.dayScore(view.habits, k, view.daysOff);
-        if (s.due && s.done) c.append(el('i', 'hb ' + (s.done >= s.due ? 'full' : 'part')));
+    const list = view.tasks.filter(t => t.due && (!t.completed || prefs.showDone))
+      .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : M.diffDays(b.start, b.due) - M.diffDays(a.start, a.due)));
+    for (let w = 0; w < weeks; w++) {
+      const ws = M.addDays(start, w * 7), we = M.addDays(ws, 6);
+      const row = el('div', 'cal-week');
+      for (let i = 0; i < 7; i++) {
+        const k = M.addDays(ws, i), d = M.parseKey(k);
+        const off = view.daysOff.get(k);
+        const c = btn('cal-day' + (d.getMonth() !== calMonth.getMonth() ? ' out' : '') + ([0, 6].includes(d.getDay()) ? ' we' : '') + (k === today ? ' today' : '') + (k === calSel ? ' sel' : '') + (off ? ' off' : ''),
+          [], () => { calSel = k; if (d.getMonth() !== calMonth.getMonth()) calMonth = new Date(d.getFullYear(), d.getMonth(), 1); render(); }, md(k));
+        c.style.gridColumn = String(i + 1);
+        const tp = el('div', 'cal-dtop');
+        tp.append(el('span', 'cal-dnum', String(d.getDate())));
+        if (k <= today) {
+          const s = M.dayScore(view.habits, k, view.daysOff);
+          if (s.due && s.done) tp.append(el('i', 'cal-hb' + (s.done >= s.due ? ' full' : '')));
+        }
+        c.append(tp);
+        if (off) c.append(el('span', 'cal-off', off));
+        row.append(c);
       }
-      grid.append(c);
+      // この週にかかるタスクを、空いている段に並べる
+      const lanes = [], hidden = Array(7).fill(0);
+      for (const t of list) {
+        if (t.due < ws || t.start > we) continue;
+        const a = Math.max(0, M.diffDays(ws, t.start)), b = Math.min(6, M.diffDays(ws, t.due));
+        let lane = lanes.findIndex(end => end < a);
+        if (lane < 0 && lanes.length < LANES) { lanes.push(-1); lane = lanes.length - 1; }
+        if (lane < 0) { for (let i = a; i <= b; i++) hidden[i]++; continue; }
+        lanes[lane] = b;
+        const late = !t.completed && t.due < today;
+        const bar = btn('cal-bar' + (t.milestone ? ' ms' : '') + (t.completed ? ' done' : '') + (late ? ' late' : '') + (t.start < ws ? ' cont-l' : '') + (t.due > we ? ' cont-r' : ''), [], () => openTask(t), t.title);
+        bar.style.setProperty('--c', colorOf(t));
+        bar.style.gridColumn = `${a + 1} / ${b + 2}`;
+        bar.style.gridRow = String(lane + 2);
+        if (t.milestone) bar.insertAdjacentHTML('beforeend', icon('flag'));
+        bar.append(el('span', '', t.title));
+        row.append(bar);
+      }
+      hidden.forEach((n, i) => {
+        if (!n) return;
+        const m = btn('cal-more', `+${n}`, () => { calSel = M.addDays(ws, i); render(); }, `ほか${n}件`);
+        m.style.gridColumn = String(i + 1); m.style.gridRow = String(LANES + 2);
+        row.append(m);
+      });
+      cal.append(row);
     }
-    cal.append(grid);
     const lg = el('div', 'legend');
-    lg.innerHTML = `<span><i style="background:var(--ok)"></i>習慣を全部できた</span><span><i style="box-shadow:inset 0 0 0 2px var(--ok)"></i>一部できた</span><span><i style="background:var(--warn)"></i>休みの日</span>`;
+    lg.innerHTML = '<span><i class="cal-hb full"></i>確認項目を全部できた</span><span><i class="cal-hb"></i>一部できた</span><span><i class="sq off"></i>休みの日</span>';
     cal.append(lg);
     main.append(cal);
 
-    // 選んだ日
+    // ---- 選んだ日 ----
     const k = calSel;
-    const dc = el('div', 'card');
+    const p = panel('dayPanel');
+    const isOff = view.daysOff.has(k);
     const hd = el('div', 'dayHead');
     hd.append(el('b', '', md(k)));
-    const isOff = view.daysOff.has(k);
+    if (k === today) hd.append(el('span', 'chip ok', '今日'));
     if (isOff) hd.append(el('span', 'chip off', view.daysOff.get(k)));
-    hd.append(btn('btn small', isOff ? '休みをやめる' : '休みにする', () => commit({ type: 'dayoff.set', day: k, label: isOff ? null : '休み' })));
-    dc.append(hd);
+    hd.append(btn('btn small white', ['tree-palm', isOff ? '休みをやめる' : '休みにする'], () => commit({ type: 'dayoff.set', day: k, label: isOff ? null : '休み' })));
+    p.append(hd);
 
     const ts = view.tasks.filter(t => M.onDay(t, k) && (!t.completed || prefs.showDone));
-    const h1 = el('div', 'sub', `タスク ${ts.length}件`); h1.style.margin = '8px 0 0';
-    dc.append(h1);
-    ts.forEach(t => dc.append(taskRow(t)));
+    p.append(panelHead('list-todo', 'タスク', el('span', '', `${ts.length}件`)));
+    if (!ts.length) p.append(el('div', 'noData', 'この日のタスクはありません'));
+    ts.forEach(t => p.append(taskRow(t)));
+    p.append(btn('addTask', ['plus', 'タスクを追加'], () => openTask(null, k)));
 
-    const plans = view.plans.filter(p => p.day === k).sort((a, b) => a.start_min - b.start_min);
+    const plans = view.plans.filter(x => x.day === k).sort((a, b) => a.start_min - b.start_min);
     if (plans.length) {
-      const h2 = el('div', 'sub', '作業計画（Mac で作った時間割）'); h2.style.margin = '12px 0 0';
-      dc.append(h2);
-      for (const p of plans) {
+      p.append(panelHead('calendar-clock', '作業計画', el('span', '', 'Mac で作った時間割')));
+      for (const x of plans) {
         const r = el('div', 'plan');
-        const ln = el('i', 'pl'); ln.style.background = projOf(p.project_id)?.color || 'var(--g400)';
-        const tx = el('div'); tx.append(el('b', '', p.title));
-        r.append(el('time', '', `${hm(p.start_min)}–${hm(p.end_min)}`), ln, tx);
-        dc.append(r);
+        r.style.setProperty('--c', projOf(x.project_id)?.color || 'var(--g400)');
+        r.append(el('time', '', `${hm(x.start_min)}–${hm(x.end_min)}`), el('i', 'pl'), el('b', '', x.title));
+        p.append(r);
       }
     }
-
-    if (k <= today && view.habits.length) {
+    if (view.habits.length) {
       const s = M.dayScore(view.habits, k, view.daysOff);
-      const h3 = el('div', 'sub', `習慣 ${s.done} / ${s.due}`); h3.style.margin = '12px 0 0';
-      dc.append(h3);
-      const go = btn('btn small white', ['list-checks', 'この日の習慣をつける'], () => { selDay = k; switchTab('today'); });
-      go.style.marginTop = '8px';
-      dc.append(go);
+      p.append(panelHead('calendar-check', '確認項目', el('span', '', `${s.done} / ${s.due}`)));
+      const l = el('div', 'hb-list');
+      view.habits.filter(h => h.created <= k && (M.isDue(h, k, view.daysOff) || h.done.has(k))).forEach(h => l.append(habitRow(h, k, { noEdit: true })));
+      if (!l.childElementCount) l.append(el('div', 'noData', 'この日にやる項目はありません'));
+      p.append(l);
     }
-    main.append(dc);
+    main.append(p);
   }
 
   // ================= 同期 =================
   function renderSync(main) {
-    const st = el('div', 'stat');
-    const a = el('div'); a.append(el('small', '', '送っていない変更'), el('b', '', `${state.ops.length}件`));
-    const b = el('div'); b.append(el('small', '', 'Mac から受け取った日'), el('b', 's', state.base ? fmtTime(state.base.exportedAt) : 'まだ'));
-    st.append(a, b);
-    main.append(st);
+    const kp = el('div', 'kpis');
+    const k1 = el('div', 'kpi'); const l1 = el('div', 'label'); l1.innerHTML = icon('upload'); l1.append('送っていない変更');
+    const v1 = el('div', 'value', String(state.ops.length)); v1.append(el('small', '', '件'));
+    k1.append(l1, v1, el('div', 'note', state.sentAt ? `最後に送った日 ${fmtTime(state.sentAt)}` : 'まだ送っていません'));
+    const k2 = el('div', 'kpi'); const l2 = el('div', 'label'); l2.innerHTML = icon('download'); l2.append('受け取った日');
+    k2.append(l2, el('div', 'value s', state.base ? fmtTime(state.base.exportedAt) : 'まだ'), el('div', 'note', state.base ? 'Mac で書き出した時刻' : 'スマホだけで使っています'));
+    kp.append(k1, k2);
+    main.append(kp);
 
-    const c = el('div', 'card');
+    const c = panel();
     const bs = el('div', 'syncBtns');
     bs.append(btn('btn primary wide', ['download', 'ファイルを取り込む'], pickFile),
-      btn('btn wide', ['upload', state.ops.length ? `Macへ送る（${state.ops.length}件）` : 'Macへ送る'], sendToMac));
+      btn('btn white wide', ['upload', state.ops.length ? `Macへ送る（${state.ops.length}件）` : 'Macへ送る'], sendToMac));
     c.append(bs);
-    if (state.sentAt) { const s = el('div', 'sub', `最後に送った日：${fmtTime(state.sentAt)}`); s.style.marginTop = '10px'; c.append(s); }
     main.append(c);
 
-    const how = el('div', 'card');
-    how.append(el('h2', '', '同期のしかた'));
+    const how = panel();
+    how.append(panelHead('info', '同期のしかた'));
     const ol = el('ol', 'steps');
     for (const t of [
       'Mac の Workstation で「設定 → スマホ用に書き出す」。できたファイルを AirDrop などでスマホへ送り、ここの「ファイルを取り込む」で選びます。',
-      'スマホで習慣のチェックやタスクを変えたら「Macへ送る」。ファイルを Mac へ送り、Mac の「設定 → スマホの変更を取り込む」で選びます。',
+      'スマホで確認項目のチェックやタスクを変えたら「Macへ送る」。ファイルを Mac へ送り、Mac の「設定 → スマホの変更を取り込む」で選びます。',
       'Mac で取り込んだら、もう一度「スマホ用に書き出す」→「ファイルを取り込む」をすると、送った変更がここから消えます（何度送っても二重にはなりません）。',
     ]) ol.append(el('li', '', t));
     how.append(ol);
-    const nt = el('div', 'sub', 'スマホだけでも使えます。スマホで作った習慣やプロジェクトも「Macへ送る」で Mac に入ります（同じ名前のものは1つにまとまります）。学習計画などをまとめて入れる「追加用のファイル」も「ファイルを取り込む」で入ります。');
-    nt.style.marginTop = '10px';
-    how.append(nt);
+    how.append(el('div', 'noData', 'スマホだけでも使えます。スマホで作った確認項目やプロジェクトも「Macへ送る」で Mac に入ります（同じ名前のものは1つにまとまります）。学習計画などをまとめて入れる「追加用のファイル」も「ファイルを取り込む」で入ります。'));
     main.append(how);
 
-    const set = el('div', 'card');
-    set.append(el('h2', '', '設定'));
+    const set = panel();
+    set.append(panelHead('settings', '設定'));
     const r1 = el('div', 'setRow');
     r1.append(el('span', '', '見た目'));
-    const sel = el('select');
-    for (const [v, l] of [['auto', 'スマホに合わせる'], ['light', 'ライト'], ['dark', 'ダーク']]) { const o = el('option', '', l); o.value = v; sel.append(o); }
-    sel.value = prefs.theme;
-    sel.addEventListener('change', () => { prefs.theme = sel.value; applyTheme(); savePrefs(); });
-    r1.append(sel);
+    const seg = el('div', 'seg');
+    for (const [v, l] of [['auto', '自動'], ['light', 'ライト'], ['dark', 'ダーク']]) {
+      seg.append(btn(prefs.theme === v ? 'on' : '', l, () => { prefs.theme = v; applyTheme(); savePrefs(); render(); }));
+    }
+    r1.append(seg);
     const r2 = el('div', 'setRow');
     r2.append(el('span', '', 'このスマホのデータを消す'));
-    r2.append(btn('btn small danger', '消す', async () => {
+    r2.append(btn('btn small danger', ['trash-2', '消す'], async () => {
       if (!confirm('このスマホに入っているデータを消しますか？\n' + (state.ops.length ? `Mac へ送っていない変更（${state.ops.length}件）も消えます。\n` : '') + 'Mac のデータはそのままです。')) return;
       state = { base: null, ops: [], receivedAt: null, sentAt: null };
       recompute(); await saveState(); render(); toast('消しました');
     }));
     set.append(r1, r2);
     main.append(set);
-    const v = el('div', 'sub', 'データはこのスマホの中だけに保存され、外へは送りません。'); v.style.textAlign = 'center'; v.style.padding = '4px 12px';
+    const v = el('div', 'foot'); v.innerHTML = icon('circle-check'); v.append('データはこのスマホの中だけに保存され、外へは送りません');
     main.append(v);
   }
 
@@ -577,7 +688,7 @@
   // ================= タスクのシート =================
   const sheet = $('#sheet');
   sheet.addEventListener('click', e => { if (e.target === sheet) sheet.close(); });   // 外側を押したら閉じる
-  function openTask(t) {
+  function openTask(t, defDay) {
     const isNew = !t;
     const inn = $('#sheetIn');
     inn.innerHTML = '';
@@ -620,8 +731,8 @@
     pf.append(np);
     inn.append(pf);
     const two = el('div', 'two');
-    const st = el('input', 'inp'); st.type = 'date'; st.value = t?.start || (isNew ? todayKey() : '');
-    const du = el('input', 'inp'); du.type = 'date'; du.value = t?.due || (isNew ? todayKey() : '');
+    const st = el('input', 'inp'); st.type = 'date'; st.value = t?.start || (isNew ? defDay || todayKey() : '');
+    const du = el('input', 'inp'); du.type = 'date'; du.value = t?.due || (isNew ? defDay || todayKey() : '');
     two.append(field('開始日', st), field('期限', du));
     inn.append(two);
     const msL = el('label', 'tog'); const ms = el('input'); ms.type = 'checkbox'; ms.checked = !!t?.milestone;
@@ -669,7 +780,7 @@
     add.append(ai, btn('iconBtn dark', 'plus', addSub, '足す'));
     subs.append(list, add);
     inn.append(subs);
-    if (t?.note) { inn.append(el('div', 'sub', 'メモ')); inn.append(el('div', 'note', t.note)); }
+    if (t?.note) { inn.append(el('div', 'sub', 'メモ')); inn.append(el('div', 'tnote', t.note)); }
 
     const bt = el('div', 'shBtns');
     if (!isNew) bt.append(btn('btn danger', ['trash-2', '消す'], () => {
@@ -732,7 +843,7 @@
   function openHabit(h) {
     const isNew = !h;
     const inn = $('#sheetIn');
-    sheetHead(inn, isNew ? '習慣を追加' : '習慣を編集');
+    sheetHead(inn, isNew ? '確認項目を追加' : '確認項目を編集');
     const d = {
       name: h?.name || '', color: h?.color || HABIT_COLORS[view.habits.length % HABIT_COLORS.length],
       icon: h?.icon || 'lucide:' + HABIT_ICONS[view.habits.length % HABIT_ICONS.length],
@@ -811,7 +922,7 @@
         if (Object.keys(f).length) commit({ type: 'habit.edit', habit: h.id, fields: f });
       }
       sheet.close();
-      toast(isNew ? '習慣を追加しました' : '保存しました');
+      toast(isNew ? '確認項目を追加しました' : '保存しました');
     }));
     inn.append(bt);
     drawPrev();
@@ -864,6 +975,7 @@
       toast(isNew ? 'プロジェクトを追加しました' : '保存しました');
     }));
     inn.append(bt);
+    if (!sheet.open) sheet.showModal();   // フォルダのカードから直接開いたとき
     if (isNew) setTimeout(() => name.focus(), 200);
   }
 
@@ -880,7 +992,7 @@
     const acts = $('#topActs');
     acts.innerHTML = '';
     if (tab === 'gantt' || tab === 'cal' || tab === 'today') {
-      acts.append(btn('iconBtn dark', 'plus', () => openTask(null), 'タスクを追加'));
+      acts.append(tab === 'today' ? btn('btn primary small', ['plus', '確認項目'], () => openHabit(null)) : btn('btn primary small', ['plus', 'タスク'], () => openTask(null, tab === 'cal' ? calSel : undefined)));
     }
     const badge = $('#syncBadge');
     badge.hidden = !state.ops.length;
